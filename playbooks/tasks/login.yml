@@ -1,0 +1,7 @@
+---
+- name: Verify connectivity to Cumulus switch
+  ansible.builtin.ping:
+
+- name: Print login confirmation
+  debug:
+    msg: "✅ Successfully logged in to {{ inventory_hostname }}"

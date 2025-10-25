@@ -1,0 +1,40 @@
+---
+# Gather basic system facts
+- name: Gather Cumulus system facts
+  ansible.builtin.setup:
+
+# Get additional Cumulus-specific info
+- name: Get OS version
+  ansible.builtin.command: cat /etc/os-release
+  register: os_version
+  changed_when: false
+
+- name: Get interface summary
+  ansible.builtin.command: ip -brief addr
+  register: iface_summary
+  changed_when: false
+
+- name: Get routing summary
+  ansible.builtin.command: ip route show
+  register: route_summary
+  changed_when: false
+
+# Print everything neatly
+- name: Display Cumulus switch facts on screen
+  debug:
+    msg:
+      - "--------------------------------------------------"
+      - "🔹 Hostname: {{ ansible_facts['hostname'] }}"
+      - "🔹 OS: {{ (os_version.stdout_lines | select('search', 'PRETTY_NAME') | list | first) | regex_replace('PRETTY_NAME=\"(.*)\"', '\\1') }}"
+      - "🔹 Kernel: {{ ansible_facts['kernel'] }}"
+      - "🔹 Architecture: {{ ansible_facts['architecture'] }}"
+      - "🔹 Management IP: {{ ansible_facts['default_ipv4']['address'] }}"
+      - "🔹 CPU: {{ ansible_facts['processor_count'] }} cores"
+      - "🔹 Memory: {{ (ansible_facts['memtotal_mb'] / 1024) | round(2) }} GB"
+      - "--------------------------------------------------"
+      - "🌐 Interface Summary:"
+      - "{{ iface_summary.stdout_lines }}"
+      - "--------------------------------------------------"
+      - "🛣️ Routing Table Summary:"
+      - "{{ route_summary.stdout_lines }}"
+      - "--------------------------------------------------"

@@ -1,0 +1,13 @@
+---
+- name: Main Playbook - Login and Display Cumulus Facts
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Include login task
+      include_tasks: tasks/login.yml
+
+    - name: Include get facts task
+      include_tasks: tasks/get_facts.yml
