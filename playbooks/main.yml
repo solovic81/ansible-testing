@@ -1,6 +1,6 @@
 ---
 - name: Main Playbook - Login and Display Cumulus Facts
-  hosts: all
+  hosts: hosts
   gather_facts: false
   vars_files:
     - ../group_vars/all.yml
