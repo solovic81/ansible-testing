@@ -24,11 +24,13 @@
 - name: Display Cumulus switch facts on screen
   debug:
     msg:
-      - "--------------------------------------------------"
-      - " Hostname      : {{ ansible_facts['hostname'] }}"
-      - " OS            : {{ ansible_facts['lsb']['id']}}-{{ ansible_facts['lsb']['release']}}"
+
+       - "{{ ansible_fact }}"
+#      - "--------------------------------------------------"
+#      - " Hostname      : {{ ansible_facts['hostname'] }}"
+#      - " OS            : {{ ansible_facts['lsb']['id']}}-{{ ansible_facts['lsb']['release']}}" #or {{ansible_facts['distribution_release']}}"
 #      - " Architecture : {{ ansible_facts['architecture'] }}"
-      - " Management IP : {{ ansible_facts['eth0']['ipv4']['address']}}\/{{ ansible_facts['eth0']['ipv4']['prefix']}}"
+#      - " Management IP : {{ ansible_facts['eth0']['ipv4']['address']}}\/{{ ansible_facts['eth0']['ipv4']['prefix']}}"
 #      - " CPU: {{ ansible_facts['processor_count'] }} cores"
 #      - " Memory: {{ (ansible_facts['memtotal_mb'] / 1024) | round(2) }} GB"
 #      - "--------------------------------------------------"

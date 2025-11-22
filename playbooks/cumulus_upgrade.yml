@@ -1,0 +1,74 @@
+---
+- name: NVIDIA Cumulus OS Upgrade
+  hosts: cumulus
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Show current version
+      debug:
+        msg: "Current OS version is {{ ansible_distribution_version }}"
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: not skip_update | default(false)
+
+    - name: Get installed version of cumulus-platform
+      shell: apt-cache policy cumulus-platform | grep Installed | awk '{print $2}'
+      register: installed_version
+      changed_when: false
+      check_mode: false
+
+    - name: Get candidate version of cumulus-platform
+      shell: apt-cache policy cumulus-platform | grep Candidate | awk '{print $2}'
+      register: candidate_version
+      changed_when: false
+      check_mode: false
+
+    - name: Show versions
+      debug:
+        msg: 
+          - "Installed version: {{ installed_version.stdout }}"
+          - "Candidate version: {{ candidate_version.stdout }}"
+
+    - name: Check if upgrade is required
+      set_fact:
+        upgrade_needed: "{{ installed_version.stdout != candidate_version.stdout and candidate_version.stdout != '' }}"
+
+    - name: Confirm upgrade status
+      debug:
+        msg: "Upgrade required: {{ upgrade_needed }}"
+
+    - name: Perform dist-upgrade
+      apt:
+        upgrade: dist
+      register: upgrade_output
+      when: upgrade_needed
+
+    - name: Check if reboot is required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot the switch if required
+      reboot:
+        msg: "Rebooting for OS upgrade"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: whoami
+      when: (reboot_required_file.stat.exists or upgrade_output.changed) and upgrade_needed
+
+    - name: Wait for switch to return
+      wait_for_connection:
+        delay: 60
+        timeout: 600
+      when: (reboot_required_file.stat.exists or upgrade_output.changed) and upgrade_needed
+
+    - name: Verify new version after upgrade
+      debug:
+        msg: "New OS version is {{ ansible_distribution_version }}"
+      when: upgrade_output.changed

@@ -1,0 +1,5 @@
+---
+- name: Verify new version after upgrade
+  debug:
+    msg: "New OS version is {{ ansible_distribution_version }}"
+  when: upgrade_output.changed
