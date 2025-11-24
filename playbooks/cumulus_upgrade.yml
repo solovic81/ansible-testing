@@ -47,6 +47,11 @@
       register: upgrade_output
       when: upgrade_needed
 
+#    - name: Show upgrade output
+#      debug:
+#        var: upgrade_output.stdout_lines
+#      when: upgrade_output.changed
+
     - name: Check if reboot is required
       stat:
         path: /var/run/reboot-required
@@ -66,6 +71,10 @@
       wait_for_connection:
         delay: 60
         timeout: 600
+      when: (reboot_required_file.stat.exists or upgrade_output.changed) and upgrade_needed
+
+    - name: Refresh facts after reboot
+      setup:
       when: (reboot_required_file.stat.exists or upgrade_output.changed) and upgrade_needed
 
     - name: Verify new version after upgrade
