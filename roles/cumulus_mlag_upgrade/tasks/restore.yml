@@ -1,0 +1,33 @@
+---
+- name: Restore switch (Bring up interfaces)
+  block:
+    - name: Bring up Peerlink
+      command: "nv set interface {{ peerlink }} link state up"
+      when: peerlink is defined
+
+    - name: Bring up MLAG bonds
+      command: "nv set interface {{ item }} link state up"
+      loop: "{{ mlag_bonds }}"
+      when: mlag_bonds is defined
+
+    - name: Commit changes (Restore)
+      command: nv config apply
+      register: commit_restore
+      failed_when: "'Aborted' in commit_restore.stdout"
+
+    - name: Wait for interfaces to come up
+      pause:
+        seconds: 30
+
+    - name: Verify MLAG peering
+      command: nv show mlag -o json
+      register: mlag_restore_status
+      until: (mlag_restore_status.stdout | from_json)['peer-alive'] | lower == "true"
+      retries: 10
+      delay: 10
+      ignore_errors: true
+
+    - name: Show MLAG Status after restore
+      debug:
+        var: mlag_restore_status.stdout
+  when: mlag_present | default(false)

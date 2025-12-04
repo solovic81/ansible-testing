@@ -1,0 +1,113 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Get installed version of cumulus-platform
+  shell: apt-cache policy cumulus-platform | grep Installed | awk '{print $2}'
+  register: installed_version
+  changed_when: false
+  check_mode: false
+
+- name: Get candidate version of cumulus-platform
+  shell: apt-cache policy cumulus-platform | grep Candidate | awk '{print $2}'
+  register: candidate_version
+  changed_when: false
+  check_mode: false
+
+- name: Show versions
+  debug:
+    msg: 
+      - "Installed version: {{ installed_version.stdout }}"
+      - "Candidate version: {{ candidate_version.stdout }}"
+
+- name: Check if upgrade is required
+  set_fact:
+    upgrade_needed: "{{ installed_version.stdout != candidate_version.stdout and candidate_version.stdout != '' }}"
+
+- name: Confirm upgrade status
+  debug:
+    msg: "Upgrade required: {{ upgrade_needed }}"
+
+- name: MLAG Checks
+  block:
+    - name: Check MLAG status
+      command: nv show mlag -o json
+      register: mlag_status_json
+      ignore_errors: true
+      changed_when: false
+
+    - name: Parse MLAG status
+      set_fact:
+        mlag_data: "{{ mlag_status_json.stdout | from_json }}"
+      when: mlag_status_json.rc == 0
+
+    - name: Set MLAG present fact
+      set_fact:
+        mlag_present: "{{ mlag_status_json.rc == 0 and mlag_data is defined }}"
+
+    - name: Fail if MLAG is not present
+      fail:
+        msg: "MLAG is not configured on this switch. Exiting execution."
+      when: not mlag_present
+
+    - name: Get current MLAG priority
+      set_fact:
+        original_mlag_priority: "{{ mlag_data.priority | default(32768) }}"
+      when: mlag_present
+
+    - name: Verify MLAG consistency
+      command: nv show mlag consistency
+      register: mlag_consistency
+      when: mlag_present
+      changed_when: false
+
+    - name: Display MLAG consistency
+      debug:
+        var: mlag_consistency.stdout_lines
+      when: mlag_present
+
+    - name: Get Interface Status
+      command: nv show interface -o json
+      register: interface_status_json
+      changed_when: false
+      when: mlag_present
+
+    - name: Parse Interface Status
+      set_fact:
+        interface_data: "{{ interface_status_json.stdout | from_json }}"
+      when: mlag_present
+
+    - name: Identify Bond Interfaces and Peerlink
+      set_fact:
+        # Filter interfaces where type is 'bond' and mlag is enabled/configured.
+        # Note: The exact JSON structure for 'mlag' on an interface might vary.
+        # We look for interfaces that have 'bond' type and potentially 'mlag' key.
+        # For peerlink, we look for 'peerlink' in the name or specific mlag settings if available.
+        # Assuming standard naming convention or 'peerlink' property if available.
+        # If 'peerlink' is not explicitly flagged, we might need to rely on 'nv show mlag' for that specific one,
+        # but user asked to use 'nv show interface'.
+        # Let's try to find peerlink by name 'peerlink' or if it has 'mlag.peerlink' property.
+        # And other bonds are those with 'bond' type but not the peerlink.
+        
+        # Strategy:
+        # 1. Get all interfaces.
+        # 2. Filter for bonds: usually keys in interface_data where 'type' == 'bond' (or similar).
+        # 3. Peerlink is often named 'peerlink'.
+        
+        # We will assume interface_data is a dictionary where keys are interface names.
+        # Or it might be a list. 'nv show interface -o json' usually returns a dict or list.
+        # Based on typical NVUE, it's often a dict keyed by interface name.
+        
+        mlag_bonds: >-
+          {{
+            interface_data | dict2items | 
+            selectattr('value.type', 'defined') |
+            selectattr('value.type', 'equalto', 'bond') |
+            rejectattr('key', 'equalto', 'peerlink') |
+            map(attribute='key') | list
+          }}
+        peerlink: "{{ mlag_data['peer-interface'] | default('peerlink') }}"
+      when: mlag_present
+  when: upgrade_needed

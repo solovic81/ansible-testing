@@ -1,0 +1,17 @@
+---
+- name: Isolate switch (Bring down interfaces)
+  block:
+    - name: Bring down MLAG bonds
+      command: "nv set interface {{ item }} link state down"
+      loop: "{{ mlag_bonds }}"
+      when: mlag_bonds is defined
+
+    - name: Bring down Peerlink
+      command: "nv set interface {{ peerlink }} link state down"
+      when: peerlink is defined
+
+    - name: Commit changes (Isolate)
+      command: nv config apply
+      register: commit_isolate
+      failed_when: "'Aborted' in commit_isolate.stdout"
+  when: mlag_present | default(false)

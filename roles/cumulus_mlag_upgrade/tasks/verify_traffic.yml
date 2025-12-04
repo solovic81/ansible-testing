@@ -1,0 +1,16 @@
+---
+- name: Verify Traffic (Check Interfaces Up)
+  block:
+    - name: Check Bond Status
+      command: "nv show interface {{ item }} -o json"
+      loop: "{{ mlag_bonds }}"
+      register: bond_status
+      failed_when: "(bond_status.stdout | from_json).link['oper-status'] != 'up'"
+      when: mlag_bonds is defined
+
+    - name: Display Bond Status
+      debug:
+        msg: "Bond {{ item.item }} is UP"
+      loop: "{{ bond_status.results }}"
+      when: mlag_bonds is defined
+  when: mlag_present | default(false)

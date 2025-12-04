@@ -1,0 +1,65 @@
+---
+- name: Verify Switch Role is Secondary
+  command: nv show mlag -o json
+  register: mlag_role_check
+  changed_when: false
+  when: mlag_present | default(false)
+
+- name: Fail if not Secondary (and MLAG is present)
+  fail:
+    msg: "Switch is not in Secondary role. Aborting upgrade."
+  when: 
+    - mlag_present | default(false)
+    - (mlag_role_check.stdout | from_json)['local-role'] != "secondary"
+
+- name: Perform dist-upgrade
+  apt:
+    upgrade: dist
+  register: upgrade_output
+  ignore_errors: true
+  when: upgrade_needed
+
+- name: Display Upgrade Output (Error or Success)
+  debug:
+    var: upgrade_output
+  when: upgrade_needed and (upgrade_output.failed or upgrade_output.changed)
+
+- name: Fail if upgrade failed
+  fail:
+    msg: "Upgrade failed. Check output."
+  when: upgrade_needed and upgrade_output.failed
+
+- name: Check if reboot is required
+  stat:
+    path: /var/run/reboot-required
+  register: reboot_required_file
+  when: upgrade_needed
+
+- name: Reboot the switch
+  reboot:
+    msg: "Rebooting for OS upgrade"
+    connect_timeout: 5
+    reboot_timeout: 600
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+  when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)
+
+- name: Wait for switch to return
+  wait_for_connection:
+    delay: 60
+    timeout: 600
+  when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)
+
+- name: Get installed version of cumulus-platform (Post-Upgrade)
+  shell: apt-cache policy cumulus-platform | grep Installed | awk '{print $2}'
+  register: installed_version_post
+  changed_when: false
+  check_mode: false
+  when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)
+
+- name: Show versions (Final Verification)
+  debug:
+    msg: 
+      - "Installed version: {{ installed_version_post.stdout }}"
+      - "Candidate version: {{ candidate_version.stdout }}"
+  when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)

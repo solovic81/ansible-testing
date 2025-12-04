@@ -1,0 +1,140 @@
+---
+- name: Verify Connectivity and Facts
+  hosts: cumulus
+  gather_facts: false
+  tasks:
+    - name: Check connectivity
+      ping:
+      ignore_unreachable: true
+      register: ping_result
+
+    - name: Fail if unreachable
+      fail:
+        msg: "Switch is unreachable. Cannot proceed."
+      when: ping_result.unreachable is defined and ping_result.unreachable
+
+    - name: Gather Facts
+      setup:
+      when: ping_result.unreachable is not defined or not ping_result.unreachable
+- name: Pre-check and Setup
+  hosts: cumulus
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: check_mlag
+
+- name: Set Initial Priorities (Leaf 1 Primary, Leaf 2 Secondary)
+  hosts: cumulus
+  gather_facts: false
+  serial: 1
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: set_priority
+      vars:
+        new_priority: 4096
+      when: 
+        - mlag_present | default(false)
+        - inventory_hostname == 'leaf1'
+        - hostvars['leaf2']['upgrade_needed'] | default(false)
+
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: set_priority
+      vars:
+        new_priority: 8192
+      when: 
+        - mlag_present | default(false)
+        - inventory_hostname == 'leaf2'
+        - upgrade_needed | default(false)
+
+- name: Upgrade Leaf 2 (Secondary)
+  hosts: leaf2
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: isolate
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+    - name: Verify Traffic on Leaf 1
+      include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: verify_traffic
+        apply:
+          delegate_to: leaf1
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: upgrade
+      when: upgrade_needed | default(false)
+
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: restore
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+- name: Swap Roles (Leaf 2 Primary, Leaf 1 Secondary)
+  hosts: leaf2
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: set_priority
+      vars:
+        new_priority: 2048
+      when: 
+        - mlag_present | default(false)
+        - hostvars['leaf1']['upgrade_needed'] | default(false)
+
+- name: Upgrade Leaf 1 (Secondary)
+  hosts: leaf1
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: isolate
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+    - name: Verify Traffic on Leaf 2
+      include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: verify_traffic
+        apply:
+          delegate_to: leaf2
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: upgrade
+      when: upgrade_needed | default(false)
+
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: restore
+      when: 
+        - mlag_present | default(false)
+        - upgrade_needed | default(false)
+
+- name: Revert Priorities
+  hosts: cumulus
+  gather_facts: false
+  tasks:
+    - include_role:
+        name: cumulus_mlag_upgrade
+        tasks_from: set_priority
+      vars:
+        new_priority: "{{ original_mlag_priority }}"
+      when: mlag_present | default(false)

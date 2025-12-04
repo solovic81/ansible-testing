@@ -1,0 +1,15 @@
+---
+- name: Set MLAG priority to {{ new_priority }}
+  block:
+    - name: Configure MLAG priority
+      command: nv set mlag priority {{ new_priority }}
+    
+    - name: Commit changes
+      command: nv config apply
+      register: commit_output
+      failed_when: "'Aborted' in commit_output.stdout"
+
+    - name: Wait for MLAG sync
+      pause:
+        seconds: 30
+  when: mlag_present | default(false)
