@@ -4,3 +4,4 @@ ansible_password: P@ssw0rd
 ansible_connection: ssh
 ansible_become: true
 ansible_become_method: sudo
+mlag_present: true
