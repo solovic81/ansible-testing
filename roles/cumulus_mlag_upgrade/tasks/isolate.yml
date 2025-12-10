@@ -1,6 +1,11 @@
 ---
 - name: Isolate switch (Bring down interfaces)
   block:
+    - name: Shut down active SWP interfaces
+      command: "nv set interface {{ item }} link state down"
+      loop: "{{ active_swp_interfaces }}"
+      when: active_swp_interfaces is defined
+
     - name: Bring down MLAG bonds
       command: "nv set interface {{ item }} link state down"
       loop: "{{ mlag_bonds }}"

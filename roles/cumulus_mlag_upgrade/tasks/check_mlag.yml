@@ -4,6 +4,16 @@
     update_cache: yes
     cache_valid_time: 3600
 
+- name: Set log file path
+  set_fact:
+    log_file: "/home/tigeradmin/upgrade_log_{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.txt"
+
+- name: Create log file
+  copy:
+    content: "Upgrade Log for {{ inventory_hostname }} - {{ ansible_date_time.iso8601 }}\n--------------------------------------------------\n"
+    dest: "{{ log_file }}"
+  delegate_to: localhost
+
 - name: Get installed version of cumulus-platform
   shell: apt-cache policy cumulus-platform | grep Installed | awk '{print $2}'
   register: installed_version
@@ -16,19 +26,24 @@
   changed_when: false
   check_mode: false
 
-- name: Show versions
-  debug:
-    msg: 
-      - "Installed version: {{ installed_version.stdout }}"
-      - "Candidate version: {{ candidate_version.stdout }}"
+- name: Log versions
+  shell: |
+    echo "==================================================" >> {{ log_file }}
+    echo "{{ ansible_date_time.iso8601 }} - Installed version: {{ installed_version.stdout }}" >> {{ log_file }}
+    echo "{{ ansible_date_time.iso8601 }} - Candidate version: {{ candidate_version.stdout }}" >> {{ log_file }}
+    echo "==================================================" >> {{ log_file }}
+  delegate_to: localhost
 
 - name: Check if upgrade is required
   set_fact:
     upgrade_needed: "{{ installed_version.stdout != candidate_version.stdout and candidate_version.stdout != '' }}"
 
-- name: Confirm upgrade status
-  debug:
-    msg: "Upgrade required: {{ upgrade_needed }}"
+- name: Log upgrade status
+  shell: |
+    echo "==================================================" >> {{ log_file }}
+    echo "{{ ansible_date_time.iso8601 }} - Upgrade required: {{ upgrade_needed }}" >> {{ log_file }}
+    echo "==================================================" >> {{ log_file }}
+  delegate_to: localhost
 
 - name: MLAG Checks
   block:
@@ -63,9 +78,13 @@
       when: mlag_present
       changed_when: false
 
-    - name: Display MLAG consistency
-      debug:
-        var: mlag_consistency.stdout_lines
+    - name: Log MLAG consistency
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - MLAG Consistency:" >> {{ log_file }}
+        echo "{{ mlag_consistency.stdout }}" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
       when: mlag_present
 
     - name: Get Interface Status
@@ -109,5 +128,81 @@
             map(attribute='key') | list
           }}
         peerlink: "{{ mlag_data['peer-interface'] | default('peerlink') }}"
+        active_swp_interfaces: >-
+          {{
+            interface_data | dict2items |
+            selectattr('key', 'match', '^swp') |
+            rejectattr('key', 'equalto', 'eth0') |
+            rejectattr('key', 'equalto', 'mgmt') |
+            selectattr('value.link.oper-status', 'defined') |
+            selectattr('value.link.oper-status', 'equalto', 'up') |
+            map(attribute='key') | list
+          }}
+        bond_members: >-
+          {{
+            interface_data.values() |
+            selectattr('bond.member', 'defined') |
+            map(attribute='bond.member') |
+            map('keys') |
+            flatten |
+            list
+          }}
       when: mlag_present
-  when: upgrade_needed
+
+    - name: Check for Isolated State (Recovery Mode)
+      block:
+        - name: Check Peerlink Admin Status
+          set_fact:
+            peerlink_down: "{{ interface_data[peerlink]['link']['admin-status'] == 'down' }}"
+          when: peerlink is defined and interface_data[peerlink] is defined
+
+        - name: Recover from Isolation (Bring Up Peerlink Only)
+          block:
+            - name: Log Recovery Action
+              shell: |
+                echo "==================================================" >> {{ log_file }}
+                echo "{{ ansible_date_time.iso8601 }} - Peerlink {{ peerlink }} is down. Bringing up Peerlink for recovery/sync." >> {{ log_file }}
+                echo "==================================================" >> {{ log_file }}
+              delegate_to: localhost
+
+            - name: Bring up Peerlink
+              command: "nv set interface {{ peerlink }} link state up"
+            
+            - name: Apply Config (Recovery)
+              command: nv config apply
+              register: recovery_apply
+              until: recovery_apply.rc == 0
+              retries: 3
+              delay: 10
+
+            - name: Wait for MLAG Sync (Recovery)
+              pause:
+                seconds: 60
+
+            - name: Refresh MLAG Status
+              command: nv show mlag -o json
+              register: mlag_status_refreshed
+              changed_when: false
+
+            - name: Update MLAG Data
+              set_fact:
+                mlag_data: "{{ mlag_status_refreshed.stdout | from_json }}"
+
+            - name: Verify MLAG Consistency (Post-Recovery)
+              command: nv show mlag consistency
+              register: mlag_consistency_recovery
+              changed_when: false
+
+            - name: Log MLAG Consistency (Post-Recovery)
+              shell: |
+                echo "==================================================" >> {{ log_file }}
+                echo "{{ ansible_date_time.iso8601 }} - MLAG Consistency (Post-Recovery):" >> {{ log_file }}
+                echo "{{ mlag_consistency_recovery.stdout }}" >> {{ log_file }}
+                echo "==================================================" >> {{ log_file }}
+              delegate_to: localhost
+          when: peerlink_down | default(false)
+
+    - name: Check if Restore is Needed
+      set_fact:
+        needs_restore: "{{ peerlink_down | default(false) or (mlag_bonds | select('in', interface_data) | select('search', 'down') | list | length > 0) }}"
+      when: mlag_present

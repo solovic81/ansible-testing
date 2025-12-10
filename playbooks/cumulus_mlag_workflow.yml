@@ -53,6 +53,19 @@
   hosts: leaf2
   gather_facts: false
   tasks:
+    - name: Record Start Time (Leaf 2)
+      command: date +%s
+      register: leaf2_start_time
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Log Start Time (Leaf 2)
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - Starting Upgrade for Leaf 2" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
+
     - include_role:
         name: cumulus_mlag_upgrade
         tasks_from: isolate
@@ -80,7 +93,21 @@
         tasks_from: restore
       when: 
         - mlag_present | default(false)
-        - upgrade_needed | default(false)
+        - upgrade_needed | default(false) or needs_restore | default(false)
+
+    - name: Record End Time (Leaf 2)
+      command: date +%s
+      register: leaf2_end_time
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Log End Time and Duration (Leaf 2)
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - Finished Upgrade for Leaf 2" >> {{ log_file }}
+        echo "Duration: {{ leaf2_end_time.stdout | int - leaf2_start_time.stdout | int }} seconds" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
 
 - name: Swap Roles (Leaf 2 Primary, Leaf 1 Secondary)
   hosts: leaf2
@@ -99,6 +126,19 @@
   hosts: leaf1
   gather_facts: false
   tasks:
+    - name: Record Start Time (Leaf 1)
+      command: date +%s
+      register: leaf1_start_time
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Log Start Time (Leaf 1)
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - Starting Upgrade for Leaf 1" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
+
     - include_role:
         name: cumulus_mlag_upgrade
         tasks_from: isolate
@@ -126,7 +166,21 @@
         tasks_from: restore
       when: 
         - mlag_present | default(false)
-        - upgrade_needed | default(false)
+        - upgrade_needed | default(false) or needs_restore | default(false)
+
+    - name: Record End Time (Leaf 1)
+      command: date +%s
+      register: leaf1_end_time
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Log End Time and Duration (Leaf 1)
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - Finished Upgrade for Leaf 1" >> {{ log_file }}
+        echo "Duration: {{ leaf1_end_time.stdout | int - leaf1_start_time.stdout | int }} seconds" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
 
 - name: Revert Priorities
   hosts: cumulus
@@ -138,3 +192,19 @@
       vars:
         new_priority: "{{ original_mlag_priority }}"
       when: mlag_present | default(false)
+
+    - name: Record Workflow End Time
+      command: date +%s
+      register: workflow_end_time
+      delegate_to: localhost
+      changed_when: false
+      run_once: true
+
+    - name: Log Overall Duration
+      shell: |
+        echo "==================================================" >> {{ log_file }}
+        echo "{{ ansible_date_time.iso8601 }} - Workflow Completed" >> {{ log_file }}
+        echo "Total Workflow Duration: {{ workflow_end_time.stdout | int - hostvars[inventory_hostname]['ansible_date_time']['epoch'] | int }} seconds" >> {{ log_file }}
+        echo "==================================================" >> {{ log_file }}
+      delegate_to: localhost
+      when: log_file is defined

@@ -5,10 +5,20 @@
       command: "nv set interface {{ peerlink }} link state up"
       when: peerlink is defined
 
-    - name: Bring up MLAG bonds
+    - name: Restore MLAG bond interfaces
       command: "nv set interface {{ item }} link state up"
       loop: "{{ mlag_bonds }}"
       when: mlag_bonds is defined
+
+    - name: Restore Bond Members
+      command: "nv set interface {{ item }} link state up"
+      loop: "{{ bond_members }}"
+      when: bond_members is defined
+
+    - name: Restore active SWP interfaces
+      command: "nv set interface {{ item }} link state up"
+      loop: "{{ active_swp_interfaces }}"
+      when: active_swp_interfaces is defined
 
     - name: Commit changes (Restore)
       command: nv config apply

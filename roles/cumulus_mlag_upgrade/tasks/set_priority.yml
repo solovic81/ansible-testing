@@ -1,6 +1,15 @@
 ---
 - name: Set MLAG priority to {{ new_priority }}
   block:
+    - name: Get current MLAG status for priority check
+      command: nv show mlag -o json
+      register: current_mlag_status
+      changed_when: false
+
+    - name: Display Priority Change
+      debug:
+        msg: "Current MLAG priority value is {{ (current_mlag_status.stdout | from_json).priority }}. Changing to the value {{ new_priority }}."
+
     - name: Configure MLAG priority
       command: nv set mlag priority {{ new_priority }}
     
