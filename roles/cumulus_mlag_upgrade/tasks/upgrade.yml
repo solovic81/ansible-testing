@@ -31,31 +31,9 @@
   changed_when: false
   when: upgrade_needed
 
-- name: Log Upgrade Duration
-  shell: |
-    echo "==================================================" >> {{ log_file }}
-    echo "{{ ansible_date_time.iso8601 }} - Upgrade Duration: {{ ((upgrade_end_time.stdout | int - upgrade_start_time.stdout | int) / 3600) | int }}h {{ (((upgrade_end_time.stdout | int - upgrade_start_time.stdout | int) % 3600) / 60) | int }}m" >> {{ log_file }}
-    echo "==================================================" >> {{ log_file }}
-  delegate_to: localhost
-  when: upgrade_needed
 
-- name: Log Upgrade Output
-  block:
-    - name: Write upgrade output to temp file
-      copy:
-        content: |
-          ==================================================
-          {{ ansible_date_time.iso8601 }} - Upgrade Output:
-          {{ upgrade_output.stdout | default(upgrade_output.msg) }}
-          {{ upgrade_output.stderr | default('') }}
-          ==================================================
-        dest: "{{ log_file }}.tmp"
-      delegate_to: localhost
 
-    - name: Append temp file to log file
-      shell: "cat {{ log_file }}.tmp >> {{ log_file }} && rm {{ log_file }}.tmp"
-      delegate_to: localhost
-  when: upgrade_needed and (upgrade_output.failed or upgrade_output.changed)
+
 
 - name: Fail if upgrade failed
   fail:
@@ -96,10 +74,4 @@
   check_mode: false
   when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)
 
-- name: Log versions (Final Verification)
-  shell: |
-    echo "{{ ansible_date_time.iso8601 }} - Final Verification:" >> {{ log_file }}
-    echo "Installed version: {{ installed_version_post.stdout }}" >> {{ log_file }}
-    echo "Candidate version: {{ candidate_version.stdout }}" >> {{ log_file }}
-  delegate_to: localhost
-  when: upgrade_needed and (reboot_required_file.stat.exists or upgrade_output.changed)
+

@@ -4,15 +4,7 @@
     update_cache: yes
     cache_valid_time: 3600
 
-- #name: Set log file path
-  #set_fact:
-  #  log_file: "/home/admin/upgrade_log_{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.txt"
 
-- name: Create log file
-  copy:
-    content: "Upgrade Log for {{ inventory_hostname }} - {{ ansible_date_time.iso8601 }}\n--------------------------------------------------\n"
-    dest: "{{ log_file }}"
-  delegate_to: localhost
 
 - name: Get installed version of cumulus-platform
   shell: apt-cache policy cumulus-platform | grep Installed | awk '{print $2}'
@@ -26,24 +18,13 @@
   changed_when: false
   check_mode: false
 
-- name: Log versions
-  shell: |
-    echo "==================================================" >> {{ log_file }}
-    echo "{{ ansible_date_time.iso8601 }} - Installed version: {{ installed_version.stdout }}" >> {{ log_file }}
-    echo "{{ ansible_date_time.iso8601 }} - Candidate version: {{ candidate_version.stdout }}" >> {{ log_file }}
-    echo "==================================================" >> {{ log_file }}
-  delegate_to: localhost
+
 
 - name: Check if upgrade is required
   set_fact:
     upgrade_needed: "{{ installed_version.stdout != candidate_version.stdout and candidate_version.stdout != '' }}"
 
-- name: Log upgrade status
-  shell: |
-    echo "==================================================" >> {{ log_file }}
-    echo "{{ ansible_date_time.iso8601 }} - Upgrade required: {{ upgrade_needed }}" >> {{ log_file }}
-    echo "==================================================" >> {{ log_file }}
-  delegate_to: localhost
+
 
 - name: MLAG Checks
   block:
@@ -78,14 +59,7 @@
       when: mlag_present
       changed_when: false
 
-    - name: Log MLAG consistency
-      shell: |
-        echo "==================================================" >> {{ log_file }}
-        echo "{{ ansible_date_time.iso8601 }} - MLAG Consistency:" >> {{ log_file }}
-        echo "{{ mlag_consistency.stdout }}" >> {{ log_file }}
-        echo "==================================================" >> {{ log_file }}
-      delegate_to: localhost
-      when: mlag_present
+
 
     - name: Get Interface Status
       command: nv show interface -o json
@@ -158,12 +132,7 @@
 
         - name: Recover from Isolation (Bring Up Peerlink Only)
           block:
-            - name: Log Recovery Action
-              shell: |
-                echo "==================================================" >> {{ log_file }}
-                echo "{{ ansible_date_time.iso8601 }} - Peerlink {{ peerlink }} is down. Bringing up Peerlink for recovery/sync." >> {{ log_file }}
-                echo "==================================================" >> {{ log_file }}
-              delegate_to: localhost
+
 
             - name: Bring up Peerlink
               command: "nv set interface {{ peerlink }} link state up"
@@ -193,13 +162,7 @@
               register: mlag_consistency_recovery
               changed_when: false
 
-            - name: Log MLAG Consistency (Post-Recovery)
-              shell: |
-                echo "==================================================" >> {{ log_file }}
-                echo "{{ ansible_date_time.iso8601 }} - MLAG Consistency (Post-Recovery):" >> {{ log_file }}
-                echo "{{ mlag_consistency_recovery.stdout }}" >> {{ log_file }}
-                echo "==================================================" >> {{ log_file }}
-              delegate_to: localhost
+
           when: peerlink_down | default(false)
 
     - name: Check if Restore is Needed
