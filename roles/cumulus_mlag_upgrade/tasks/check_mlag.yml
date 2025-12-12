@@ -4,9 +4,9 @@
     update_cache: yes
     cache_valid_time: 3600
 
-- name: Set log file path
-  set_fact:
-    log_file: "/home/admin/upgrade_log_{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.txt"
+- #name: Set log file path
+  #set_fact:
+  #  log_file: "/home/admin/upgrade_log_{{ inventory_hostname }}_{{ ansible_date_time.iso8601 }}.txt"
 
 - name: Create log file
   copy:
